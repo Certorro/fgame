@@ -4,6 +4,43 @@ import { Sonya, generateSonyaTextures } from '../entities/Sonya';
 import { Yana, generateYanaTextures } from '../entities/Yana';
 import { Collectible, generateCollectibleTextures } from '../entities/Collectible';
 import { Player } from '../entities/Player';
+import { DialogSystem, DialogLine } from '../systems/DialogSystem';
+
+// ─── Dialogue data for Level 1 ────────────────────────────────────────────────
+
+const SONYA_COLOR = '#FFD060';
+const YANA_COLOR  = '#7AB0FF';
+const NPC_COLOR   = '#FF9999';
+
+const DIALOGS: Record<string, DialogLine[]> = {
+  intro: [
+    { speaker: 'NPC', text: 'Куда это вы с двумя чемоданами?', color: NPC_COLOR },
+    { speaker: 'Соня', text: 'Нам каждый нужен.', color: SONYA_COLOR },
+    { speaker: 'Яна',  text: 'По-отдельности.', color: YANA_COLOR },
+  ],
+  mid: [
+    { speaker: 'NPC', text: 'Возьмите одно на двоих!', color: NPC_COLOR },
+    { speaker: 'Соня', text: 'Мы не одинаковые. Мы просто синхронно устали.', color: SONYA_COLOR },
+  ],
+  exit: [
+    { speaker: 'Яна',  text: 'Это не паника...', color: YANA_COLOR },
+    { speaker: 'Соня', text: '...это ускоренная подготовка.', color: SONYA_COLOR },
+  ],
+  allCollected: [
+    { speaker: 'Соня', text: 'Всё! Едем!', color: SONYA_COLOR, duration: 1600 },
+    { speaker: 'Яна',  text: 'До поезда 20 минут. Бежим.', color: YANA_COLOR, duration: 1800 },
+  ],
+};
+
+// ─── Trigger types ────────────────────────────────────────────────────────────
+
+interface ProximityTrigger {
+  x: number;
+  y: number;
+  radius: number;
+  lines: DialogLine[];
+  fired: boolean;
+}
 
 export class GameScene extends Phaser.Scene {
   private sonya!: Sonya;
@@ -12,9 +49,16 @@ export class GameScene extends Phaser.Scene {
 
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
   private collectibles!: Phaser.Physics.Arcade.Group;
+  private finishDoor!: Phaser.Physics.Arcade.Image;
 
-  private collected  = 0;
-  private totalItems = 5;
+  private dialog!: DialogSystem;
+  private triggers: ProximityTrigger[] = [];
+
+  private collected      = 0;
+  private readonly total = 5;
+  private doorUnlocked   = false;
+  private levelDone      = false;
+
   private itemText!: Phaser.GameObjects.Text;
   private switchLabel!: Phaser.GameObjects.Text;
 
@@ -31,6 +75,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.levelDone    = false;
+    this.doorUnlocked = false;
+    this.collected    = 0;
+    this.triggers     = [];
+
     this.buildTextures();
     this.createWorld();
     this.createPlayers();
@@ -40,9 +89,16 @@ export class GameScene extends Phaser.Scene {
     this.createHUD();
     this.createTouchControls();
     this.setupCamera();
+
+    this.dialog = new DialogSystem(this);
+    this.setupTriggers();
+
+    this.cameras.main.fadeIn(400, 0, 0, 0);
   }
 
   update(): void {
+    if (this.levelDone) return;
+
     const left  = this.cursors.left.isDown  || this.touchLeft;
     const right = this.cursors.right.isDown || this.touchRight;
     const jump  =
@@ -56,9 +112,11 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.tabKey)) {
       this.switchPlayer();
     }
+
+    this.checkTriggers();
   }
 
-  // ─── Textures ─────────────────────────────────────────────────────────────
+  // ─── Textures ───────────────────────────────────────────────────────────────
 
   private buildTextures(): void {
     generateSonyaTextures(this);
@@ -66,6 +124,10 @@ export class GameScene extends Phaser.Scene {
     generateCollectibleTextures(this);
     this.makeTile('platform', COLORS.PLATFORM_MID, COLORS.PLATFORM_TOP, COLORS.PLATFORM_SHADOW);
     this.makeTile('ground',   COLORS.GROUND_MID,   COLORS.GROUND_TOP,   COLORS.GROUND_SHADOW);
+    this.makeNpcTexture();
+    this.makeDrawerTexture();
+    this.makeDoorTexture(false);
+    this.makeDoorTexture(true);
   }
 
   private makeTile(key: string, mid: number, top: number, shadow: number): void {
@@ -77,7 +139,101 @@ export class GameScene extends Phaser.Scene {
     g.destroy();
   }
 
-  // ─── World ────────────────────────────────────────────────────────────────
+  private makeNpcTexture(): void {
+    const g = this.make.graphics({}, false);
+
+    // Gray hair (grandma-ish relative)
+    g.fillStyle(0xAAAAAA);
+    g.fillCircle(16, 10, 10);
+    g.fillEllipse(16, 5, 20, 12);
+
+    // Face
+    g.fillStyle(0xF0C090);
+    g.fillCircle(16, 12, 9);
+
+    // Eyes
+    g.fillStyle(0x5A3A20);
+    g.fillCircle(13, 12, 1.5);
+    g.fillCircle(19, 12, 1.5);
+
+    // Smile
+    g.fillStyle(0xC08070);
+    g.fillRect(12, 16, 8, 2);
+
+    // Body — purple house coat
+    g.fillStyle(0x8030A0);
+    g.fillRect(7, 22, 18, 20);
+
+    // Collar
+    g.fillStyle(0x6020A0);
+    g.fillTriangle(16, 22, 7, 22, 10, 32);
+    g.fillTriangle(16, 22, 25, 22, 22, 32);
+
+    // Legs
+    g.fillStyle(0x501870);
+    g.fillRect(7,  42, 7, 10);
+    g.fillRect(18, 42, 7, 10);
+
+    // Slippers
+    g.fillStyle(0x903090);
+    g.fillRect(5,  50, 9, 4);
+    g.fillRect(18, 50, 9, 4);
+
+    g.generateTexture('npc', 32, 54);
+    g.destroy();
+  }
+
+  private makeDrawerTexture(): void {
+    const g = this.make.graphics({}, false);
+    g.fillStyle(0x8B6040);
+    g.fillRect(0, 0, 32, 22);
+    g.fillStyle(0x6B4020);
+    g.fillRect(0, 0, 32, 3);
+    g.fillStyle(0xC8904C);
+    g.fillRect(2, 5, 28, 15);
+    g.fillStyle(0xAA7030);
+    g.fillRect(12, 11, 8, 5);
+    g.fillStyle(0x8B5020);
+    g.fillRect(14, 12, 4, 3);
+    g.generateTexture('drawer', 32, 22);
+    g.destroy();
+  }
+
+  private makeDoorTexture(open: boolean): void {
+    const key = open ? 'door_open' : 'door_closed';
+    const g   = this.make.graphics({}, false);
+
+    // Frame
+    g.fillStyle(0x5A4030);
+    g.fillRect(0, 0, 48, 88);
+
+    // Door face
+    g.fillStyle(open ? 0x40C060 : 0x404050);
+    g.fillRect(4, 4, 40, 80);
+
+    // Door panels
+    g.fillStyle(open ? 0x30A050 : 0x303040);
+    g.fillRect(7, 8, 16, 34);
+    g.fillRect(25, 8, 16, 34);
+    g.fillRect(7, 46, 34, 34);
+
+    // Knob
+    g.fillStyle(0xD4A020);
+    g.fillCircle(38, 44, 4);
+    g.fillStyle(0xFFD040);
+    g.fillCircle(37, 43, 2);
+
+    if (open) {
+      // Glow outline
+      g.lineStyle(2, 0x80FF80, 0.8);
+      g.strokeRect(4, 4, 40, 80);
+    }
+
+    g.generateTexture(key, 48, 88);
+    g.destroy();
+  }
+
+  // ─── World ──────────────────────────────────────────────────────────────────
 
   private createWorld(): void {
     const { WIDTH: W, HEIGHT: H, WORLD_SCALE } = GAME;
@@ -89,21 +245,26 @@ export class GameScene extends Phaser.Scene {
     bg.fillGradientStyle(0x1a0a2e, 0x1a0a2e, 0x2d1b4e, 0x2d1b4e, 1);
     bg.fillRect(0, 0, worldW, H);
 
+    // Faint floor line / wall suggestion
+    bg.fillStyle(0x2A1848, 0.5);
+    bg.fillRect(0, H - 50, worldW, 34);
+
     this.platforms = this.physics.add.staticGroup();
 
+    // Ground
     for (let x = 0; x < worldW; x += 32) {
       this.platforms.create(x + 16, H - 8, 'ground').refreshBody();
     }
 
-    // Home level — furniture as platforms
+    // Furniture platforms
     const layout: { x: number; y: number; n: number }[] = [
-      { x: 96,   y: H - 120, n: 4 },   // диван
-      { x: 290,  y: H - 165, n: 3 },   // стол
-      { x: 480,  y: H - 130, n: 3 },   // полка
-      { x: 672,  y: H - 195, n: 4 },   // шкаф
-      { x: 864,  y: H - 150, n: 3 },   // табурет
-      { x: 1056, y: H - 175, n: 4 },   // книжный шкаф
-      { x: 1260, y: H - 140, n: 3 },   // подоконник
+      { x: 96,   y: H - 120, n: 4 },
+      { x: 290,  y: H - 165, n: 3 },
+      { x: 480,  y: H - 130, n: 3 },
+      { x: 672,  y: H - 195, n: 4 },
+      { x: 864,  y: H - 150, n: 3 },
+      { x: 1056, y: H - 175, n: 4 },
+      { x: 1260, y: H - 140, n: 3 },
     ];
 
     for (const { x, y, n } of layout) {
@@ -111,40 +272,57 @@ export class GameScene extends Phaser.Scene {
         this.platforms.create(x + i * 32 + 16, y, 'platform').refreshBody();
       }
     }
+
+    // Open drawers — short obstacles on the ground the player must jump over
+    const drawerXs = [230, 580, 970];
+    for (const dx of drawerXs) {
+      this.platforms.create(dx, H - 19, 'drawer').setScale(1, 1).refreshBody();
+    }
+
+    // NPC relatives — static figures on platforms
+    this.add.image(176, H - 142, 'npc');   // on sofa platform
+    this.add.image(736, H - 217, 'npc');   // on wardrobe platform
+
+    // Finish door
+    this.finishDoor = this.physics.add.image(worldW - 60, H - 52, 'door_closed');
+    const doorBody  = this.finishDoor.body as Phaser.Physics.Arcade.Body;
+    doorBody.allowGravity = false;
+    doorBody.immovable    = true;
+
+    // "Выход" label above door
+    this.add.text(worldW - 60, H - 100, 'Выход', {
+      fontSize: '12px', color: '#666666', fontFamily: 'Arial',
+    }).setOrigin(0.5);
   }
 
-  // ─── Players ──────────────────────────────────────────────────────────────
+  // ─── Players ────────────────────────────────────────────────────────────────
 
   private createPlayers(): void {
-    this.sonya  = new Sonya(this, 80, 300);
-    this.yana   = new Yana(this, 130, 300);
+    this.sonya  = new Sonya(this, 60, 300);
+    this.yana   = new Yana(this,  96, 300);
     this.active = this.sonya;
-
-    // Inactive player faded
     this.yana.setAlpha(0.55);
   }
 
   private switchPlayer(): void {
-    const prev = this.active;
+    const prev  = this.active;
     this.active = prev === this.sonya ? this.yana : this.sonya;
 
     prev.setAlpha(0.55);
     this.active.setAlpha(1);
 
-    const nextName = this.active === this.sonya ? 'Яна' : 'Соня';
-    this.switchLabel.setText(nextName);
-
+    this.switchLabel.setText(this.active === this.sonya ? 'Яна' : 'Соня');
     this.cameras.main.startFollow(this.active, true, 0.08, 0.08);
     this.cameras.main.setDeadzone(120, 60);
   }
 
-  // ─── Collectibles ─────────────────────────────────────────────────────────
+  // ─── Collectibles ───────────────────────────────────────────────────────────
 
   private createCollectibles(): void {
     this.collectibles = this.physics.add.group();
 
     const spots: { x: number; y: number; type: CollectibleType }[] = [
-      { x: 168,  y: GAME.HEIGHT - 80,  type: 'suitcase' },
+      { x: 164,  y: GAME.HEIGHT - 80,  type: 'suitcase' },
       { x: 354,  y: GAME.HEIGHT - 210, type: 'tickets'  },
       { x: 534,  y: GAME.HEIGHT - 175, type: 'charger'  },
       { x: 752,  y: GAME.HEIGHT - 240, type: 'water'    },
@@ -152,8 +330,7 @@ export class GameScene extends Phaser.Scene {
     ];
 
     for (const { x, y, type } of spots) {
-      const item = new Collectible(this, x, y, type);
-      this.collectibles.add(item);
+      this.collectibles.add(new Collectible(this, x, y, type));
     }
   }
 
@@ -162,46 +339,173 @@ export class GameScene extends Phaser.Scene {
     item.collect();
 
     this.collected++;
-    this.itemText.setText(`Вещи: ${this.collected}/${this.totalItems}`);
+    this.itemText.setText(`Вещи: ${this.collected}/${this.total}`);
 
-    if (this.collected >= this.totalItems) {
-      this.time.delayedCall(600, () => {
-        this.itemText.setColor('#AAFFAA').setText('Всё собрано! Бежим!');
+    if (this.collected >= this.total) {
+      this.time.delayedCall(400, () => {
+        this.dialog.show(DIALOGS.allCollected);
+        this.time.delayedCall(600, () => this.unlockDoor());
       });
     }
   }
+
+  // ─── Finish door ────────────────────────────────────────────────────────────
+
+  private unlockDoor(): void {
+    this.doorUnlocked = true;
+    this.finishDoor.setTexture('door_open');
+
+    this.tweens.add({
+      targets: this.finishDoor,
+      scaleX: 1.12,
+      scaleY: 1.12,
+      duration: 280,
+      yoyo: true,
+      ease: 'Power2',
+    });
+  }
+
+  private onLevelComplete(): void {
+    if (this.levelDone) return;
+    this.levelDone = true;
+
+    this.showLevelComplete();
+  }
+
+  private showLevelComplete(): void {
+    const { WIDTH: W, HEIGHT: H } = GAME;
+
+    // Dim overlay
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
+      .setScrollFactor(0)
+      .setDepth(200);
+
+    this.tweens.add({
+      targets: dim,
+      fillAlpha: 0.65,
+      duration: 500,
+    });
+
+    this.time.delayedCall(500, () => {
+      this.add.text(W / 2, H / 2 - 60, 'Уровень 1 пройден!', {
+        fontSize: '30px', color: '#AAFFAA', fontFamily: 'Arial', fontStyle: 'bold',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+
+      this.add.text(W / 2, H / 2 - 16, 'До поезда 20 минут. Бежим!', {
+        fontSize: '16px', color: '#FFD060', fontFamily: 'Arial',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+
+      // Restart button
+      const btn = this.add.rectangle(W / 2, H / 2 + 50, 200, 44, 0x446644)
+        .setScrollFactor(0).setDepth(201).setInteractive();
+      this.add.text(W / 2, H / 2 + 50, 'Начать заново', {
+        fontSize: '16px', color: '#FFFFFF', fontFamily: 'Arial',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(202);
+
+      btn.on('pointerdown', () => {
+        this.cameras.main.fadeOut(300, 0, 0, 0);
+        this.time.delayedCall(300, () => this.scene.restart());
+      });
+      btn.on('pointerover',  () => btn.setFillStyle(0x66AA66));
+      btn.on('pointerout',   () => btn.setFillStyle(0x446644));
+    });
+  }
+
+  // ─── Proximity triggers ─────────────────────────────────────────────────────
+
+  private setupTriggers(): void {
+    const H = GAME.HEIGHT;
+
+    this.triggers = [
+      {
+        x: 170, y: H - 130,
+        radius: 110,
+        lines: DIALOGS.intro,
+        fired: false,
+      },
+      {
+        x: 720, y: H - 210,
+        radius: 120,
+        lines: DIALOGS.mid,
+        fired: false,
+      },
+      {
+        x: Math.floor(GAME.WIDTH * GAME.WORLD_SCALE) - 180, y: H - 80,
+        radius: 150,
+        lines: DIALOGS.exit,
+        fired: false,
+      },
+    ];
+  }
+
+  private checkTriggers(): void {
+    const px = this.active.x;
+    const py = this.active.y;
+
+    for (const t of this.triggers) {
+      if (t.fired || this.dialog.isActive) continue;
+      const dist = Phaser.Math.Distance.Between(px, py, t.x, t.y);
+      if (dist < t.radius) {
+        t.fired = true;
+        this.dialog.show(t.lines);
+      }
+    }
+  }
+
+  // ─── Collisions ─────────────────────────────────────────────────────────────
 
   private setupCollisions(): void {
     this.physics.add.collider(this.sonya, this.platforms);
     this.physics.add.collider(this.yana,  this.platforms);
 
     const pick = (_: unknown, item: unknown) => this.onCollect(item as Collectible);
-    this.physics.add.overlap(this.sonya, this.collectibles, pick as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback);
-    this.physics.add.overlap(this.yana,  this.collectibles, pick as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback);
+    this.physics.add.overlap(
+      this.sonya, this.collectibles,
+      pick as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+    );
+    this.physics.add.overlap(
+      this.yana, this.collectibles,
+      pick as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+    );
+
+    // Finish door — only active when unlocked
+    const tryFinish = () => {
+      if (this.doorUnlocked) this.onLevelComplete();
+    };
+    this.physics.add.overlap(
+      this.sonya, this.finishDoor,
+      tryFinish as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+    );
+    this.physics.add.overlap(
+      this.yana, this.finishDoor,
+      tryFinish as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+    );
   }
 
-  // ─── HUD ──────────────────────────────────────────────────────────────────
+  // ─── HUD ────────────────────────────────────────────────────────────────────
 
   private createHUD(): void {
-    this.itemText = this.add.text(16, 14, `Вещи: 0/${this.totalItems}`, {
+    const W = GAME.WIDTH;
+
+    this.itemText = this.add.text(16, 14, `Вещи: 0/${this.total}`, {
       fontSize: '14px', color: '#FFF0C0', fontFamily: 'Arial',
     }).setScrollFactor(0);
 
-    this.add.text(GAME.WIDTH / 2, 14, 'Уровень 1: Сборы и хаос дома', {
+    this.add.text(W / 2, 14, 'Уровень 1: Сборы и хаос дома', {
       fontSize: '14px', color: '#FFF0C0', fontFamily: 'Arial',
     }).setOrigin(0.5, 0).setScrollFactor(0);
 
-    this.add.text(GAME.WIDTH - 16, 14, 'Играет:', {
-      fontSize: '13px', color: '#AAA0FF', fontFamily: 'Arial',
+    this.add.text(W - 16, 14, 'Играет:', {
+      fontSize: '12px', color: '#AAA0FF', fontFamily: 'Arial',
     }).setOrigin(1, 0).setScrollFactor(0);
 
-    // Updated by switchPlayer() via switchLabel ref (set in createTouchControls)
-    this.add.text(GAME.WIDTH - 16, 30, 'Соня', {
+    // Updated via switchLabel ref (assigned in createTouchControls)
+    this.switchLabel = this.add.text(W - 16, 30, 'Соня', {
       fontSize: '14px', color: '#FFD060', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(1, 0).setScrollFactor(0);
   }
 
-  // ─── Touch controls ───────────────────────────────────────────────────────
+  // ─── Touch controls ─────────────────────────────────────────────────────────
 
   private createTouchControls(): void {
     const { WIDTH: W, HEIGHT: H } = GAME;
@@ -221,12 +525,13 @@ export class GameScene extends Phaser.Scene {
       return { c, t };
     };
 
-    const btmY  = H - pad - r;
-    const left  = mkBtn(pad + r,           btmY, '◀');
-    const right = mkBtn(pad + r * 3 + 16,  btmY, '▶');
-    const jump  = mkBtn(W - pad - r,       btmY, '▲');
+    const btmY = H - pad - r;
+    const left  = mkBtn(pad + r,              btmY, '◀');
+    const right = mkBtn(pad + r * 3 + 16,     btmY, '▶');
+    const jump  = mkBtn(W - pad - r,           btmY, '▲');
     const sw    = mkBtn(W - pad - r * 3 - 16, btmY, 'Яна');
 
+    // Overwrite the HUD ref so switchPlayer() updates the button label
     this.switchLabel = sw.t;
 
     const hold = (btn: Phaser.GameObjects.Arc, fn: (v: boolean) => void) => {
@@ -247,7 +552,7 @@ export class GameScene extends Phaser.Scene {
     sw.c.on('pointerout',  () => { sw.c.setFillStyle(COLORS.BTN_BG, a); });
   }
 
-  // ─── Camera ───────────────────────────────────────────────────────────────
+  // ─── Camera ─────────────────────────────────────────────────────────────────
 
   private setupKeyboard(): void {
     this.cursors  = this.input.keyboard!.createCursorKeys();
