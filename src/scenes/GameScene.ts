@@ -61,14 +61,16 @@ export class GameScene extends Phaser.Scene {
 
   private itemText!: Phaser.GameObjects.Text;
   private switchLabel!: Phaser.GameObjects.Text;
+  private specialBtn!: Phaser.GameObjects.Arc;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private tabKey!: Phaser.Input.Keyboard.Key;
 
-  private touchLeft  = false;
-  private touchRight = false;
-  private touchJump  = false;
+  private touchLeft    = false;
+  private touchRight   = false;
+  private touchJump    = false;
+  private touchSpecial = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -109,11 +111,15 @@ export class GameScene extends Phaser.Scene {
     this.touchJump = false;
     this.active.move(left, right, jump);
 
-    if (Phaser.Input.Keyboard.JustDown(this.tabKey)) {
-      this.switchPlayer();
+    if (Phaser.Input.Keyboard.JustDown(this.tabKey)) this.switchPlayer();
+
+    if (this.touchSpecial) {
+      this.touchSpecial = false;
+      this.active.special();
     }
 
     this.checkTriggers();
+    this.updateSpecialBtn();
   }
 
   // ─── Textures ───────────────────────────────────────────────────────────────
@@ -372,19 +378,21 @@ export class GameScene extends Phaser.Scene {
     this.showLevelComplete();
   }
 
+  private updateSpecialBtn(): void {
+    if (!this.specialBtn) return;
+    const ready = this.active === this.sonya && this.sonya.isDashReady;
+    this.specialBtn.setFillStyle(
+      ready ? 0xAA8800 : COLORS.BTN_BG,
+      ready ? 0.75 : 0.3,
+    );
+  }
+
   private showLevelComplete(): void {
     const { WIDTH: W, HEIGHT: H } = GAME;
 
-    // Dim overlay
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0)
-      .setScrollFactor(0)
-      .setDepth(200);
-
-    this.tweens.add({
-      targets: dim,
-      fillAlpha: 0.65,
-      duration: 500,
-    });
+      .setScrollFactor(0).setDepth(200);
+    this.tweens.add({ targets: dim, fillAlpha: 0.65, duration: 500 });
 
     this.time.delayedCall(500, () => {
       this.add.text(W / 2, H / 2 - 60, 'Уровень 1 пройден!', {
@@ -395,19 +403,18 @@ export class GameScene extends Phaser.Scene {
         fontSize: '16px', color: '#FFD060', fontFamily: 'Arial',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
 
-      // Restart button
-      const btn = this.add.rectangle(W / 2, H / 2 + 50, 200, 44, 0x446644)
+      const btn = this.add.rectangle(W / 2, H / 2 + 50, 220, 44, 0x446644)
         .setScrollFactor(0).setDepth(201).setInteractive();
-      this.add.text(W / 2, H / 2 + 50, 'Начать заново', {
+      this.add.text(W / 2, H / 2 + 50, 'Уровень 2 →', {
         fontSize: '16px', color: '#FFFFFF', fontFamily: 'Arial',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(202);
 
       btn.on('pointerdown', () => {
         this.cameras.main.fadeOut(300, 0, 0, 0);
-        this.time.delayedCall(300, () => this.scene.restart());
+        this.time.delayedCall(300, () => this.scene.start('Level2Scene'));
       });
-      btn.on('pointerover',  () => btn.setFillStyle(0x66AA66));
-      btn.on('pointerout',   () => btn.setFillStyle(0x446644));
+      btn.on('pointerover', () => btn.setFillStyle(0x66AA66));
+      btn.on('pointerout',  () => btn.setFillStyle(0x446644));
     });
   }
 
@@ -525,14 +532,15 @@ export class GameScene extends Phaser.Scene {
       return { c, t };
     };
 
-    const btmY = H - pad - r;
-    const left  = mkBtn(pad + r,              btmY, '◀');
-    const right = mkBtn(pad + r * 3 + 16,     btmY, '▶');
-    const jump  = mkBtn(W - pad - r,           btmY, '▲');
-    const sw    = mkBtn(W - pad - r * 3 - 16, btmY, 'Яна');
+    const btmY  = H - pad - r;
+    const left  = mkBtn(pad + r,                  btmY, '◀');
+    const right = mkBtn(pad + r * 3 + 16,         btmY, '▶');
+    const jump  = mkBtn(W - pad - r,               btmY, '▲');
+    const sp    = mkBtn(W - pad - r * 3 - 16,     btmY, '★');
+    const sw    = mkBtn(W - pad - r * 5 - 32,     btmY, 'Яна');
 
-    // Overwrite the HUD ref so switchPlayer() updates the button label
     this.switchLabel = sw.t;
+    this.specialBtn  = sp.c;
 
     const hold = (btn: Phaser.GameObjects.Arc, fn: (v: boolean) => void) => {
       btn.on('pointerdown', () => { fn(true);  btn.setFillStyle(COLORS.BTN_ACTIVE, 0.75); });
@@ -546,6 +554,10 @@ export class GameScene extends Phaser.Scene {
     jump.c.on('pointerdown', () => { this.touchJump = true;  jump.c.setFillStyle(COLORS.BTN_ACTIVE, 0.75); });
     jump.c.on('pointerup',   () => { jump.c.setFillStyle(COLORS.BTN_BG, a); });
     jump.c.on('pointerout',  () => { jump.c.setFillStyle(COLORS.BTN_BG, a); });
+
+    sp.c.on('pointerdown', () => { this.touchSpecial = true; sp.c.setFillStyle(COLORS.BTN_ACTIVE, 0.75); });
+    sp.c.on('pointerup',   () => { sp.c.setFillStyle(COLORS.BTN_BG, a); });
+    sp.c.on('pointerout',  () => { sp.c.setFillStyle(COLORS.BTN_BG, a); });
 
     sw.c.on('pointerdown', () => { this.switchPlayer(); sw.c.setFillStyle(COLORS.BTN_ACTIVE, 0.75); });
     sw.c.on('pointerup',   () => { sw.c.setFillStyle(COLORS.BTN_BG, a); });

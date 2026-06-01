@@ -112,7 +112,32 @@ function drawSonya(g: Phaser.GameObjects.Graphics, p: Pose): void {
 }
 
 export class Sonya extends Player {
+  private dashReadyAt = 0;
+
+  get isDashReady(): boolean {
+    return this.scene.time.now >= this.dashReadyAt;
+  }
+
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, SONYA_CFG);
+  }
+
+  // Horizontal dash — Sonya's impulsive burst
+  override special(): void {
+    if (!this.isDashReady) return;
+    this.dashReadyAt = this.scene.time.now + 1500;
+
+    const dir = this.flipX ? -1 : 1;
+    this.setVelocityX(dir * this.cfg.speed * 3.2);
+
+    // Rapid alpha flicker to show dash
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.35,
+      duration: 65,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => { if (this.active) this.setAlpha(this.alpha > 0.8 ? 1 : 0.55); },
+    });
   }
 }

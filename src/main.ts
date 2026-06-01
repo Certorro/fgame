@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME } from './config';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { Level2Scene } from './scenes/Level2Scene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -22,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
     width: GAME.WIDTH,
     height: GAME.HEIGHT,
   },
-  scene: [MenuScene, GameScene],
+  scene: [MenuScene, GameScene, Level2Scene],
 };
 
 new Phaser.Game(config);

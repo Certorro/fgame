@@ -57,6 +57,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  // Override in subclasses for character-specific abilities
+  special(): void { /* no-op */ }
+
   move(left: boolean, right: boolean, doJump: boolean): void {
     const body    = this.body as Phaser.Physics.Arcade.Body;
     const onGround = body.blocked.down;
