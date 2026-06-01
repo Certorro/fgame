@@ -3,6 +3,7 @@ import { GAME } from './config';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { Level2Scene } from './scenes/Level2Scene';
+import { Level3Scene } from './scenes/Level3Scene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -23,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
     width: GAME.WIDTH,
     height: GAME.HEIGHT,
   },
-  scene: [MenuScene, GameScene, Level2Scene],
+  scene: [MenuScene, GameScene, Level2Scene, Level3Scene],
 };
 
 new Phaser.Game(config);

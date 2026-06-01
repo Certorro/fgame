@@ -488,19 +488,15 @@ export class Level2Scene extends Phaser.Scene {
         fontSize: '16px', color: '#FFD060', fontFamily: 'Arial',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
 
-      this.add.text(W / 2, H / 2 + 14, 'Уровень 3 — скоро!', {
-        fontSize: '14px', color: '#AAA0FF', fontFamily: 'Arial',
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
-
-      const btn = this.add.rectangle(W / 2, H / 2 + 60, 200, 44, 0x446688)
+      const btn = this.add.rectangle(W / 2, H / 2 + 50, 220, 44, 0x446644)
         .setScrollFactor(0).setDepth(201).setInteractive();
-      this.add.text(W / 2, H / 2 + 60, 'В меню', {
+      this.add.text(W / 2, H / 2 + 50, 'Уровень 3 →', {
         fontSize: '16px', color: '#FFFFFF', fontFamily: 'Arial',
       }).setOrigin(0.5).setScrollFactor(0).setDepth(202);
 
       btn.on('pointerdown', () => {
         this.cameras.main.fadeOut(300, 0, 0, 0);
-        this.time.delayedCall(300, () => this.scene.start('MenuScene'));
+        this.time.delayedCall(300, () => this.scene.start('Level3Scene'));
       });
       btn.on('pointerover', () => btn.setFillStyle(0x6688AA));
       btn.on('pointerout',  () => btn.setFillStyle(0x446688));
